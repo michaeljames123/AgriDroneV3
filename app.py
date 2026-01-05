@@ -36,6 +36,7 @@ _DEVICE = os.getenv("DEVICE")
 _IMG_SIZE = int(os.getenv("IMG_SIZE", "1024"))
 _MODEL_DOWNLOAD_TIMEOUT = int(os.getenv("MODEL_DOWNLOAD_TIMEOUT", "120"))
 _MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "25")) * 1024 * 1024
+_MAX_IMAGE_EDGE = int(os.getenv("MAX_IMAGE_EDGE", "2048"))
 
 _model: Optional[YOLO] = None
 _model_path: Optional[str] = None
@@ -174,11 +175,11 @@ def ui() -> Any:
 
 
 @app.get("/health")
-def health() -> dict[str, Any]:
+def health(load_model: bool = False) -> dict[str, Any]:
     model_loaded = _model is not None
     model_error = None
 
-    if not model_loaded:
+    if load_model and not model_loaded:
         try:
             _load_model_if_needed()
             model_loaded = True
@@ -223,9 +224,14 @@ async def predict(
         raise HTTPException(status_code=413, detail="Image too large")
 
     try:
-        pil_image = ImageOps.exif_transpose(Image.open(BytesIO(image_bytes))).convert("RGB")
+        pil_image = ImageOps.exif_transpose(Image.open(BytesIO(image_bytes)))
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid image")
+
+    if _MAX_IMAGE_EDGE > 0 and max(pil_image.width, pil_image.height) > _MAX_IMAGE_EDGE:
+        pil_image.thumbnail((_MAX_IMAGE_EDGE, _MAX_IMAGE_EDGE), Image.Resampling.LANCZOS)
+
+    pil_image = pil_image.convert("RGB")
 
     image_np = np.array(pil_image)
 
@@ -234,6 +240,7 @@ async def predict(
         "imgsz": _IMG_SIZE,
         "conf": conf,
         "iou": iou,
+        "save": False,
         "retina_masks": True,
         "verbose": False,
     }

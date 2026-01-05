@@ -12,9 +12,11 @@ services:
       - key: CORS_ALLOW_ORIGINS
         value: "*"
       - key: IMG_SIZE
-        value: "1024"
+        value: "640"
       - key: MAX_UPLOAD_MB
         value: "25"
+      - key: MAX_IMAGE_EDGE
+        value: "2048"
       - key: MODEL_DOWNLOAD_TIMEOUT
         value: "120"
       - key: MODEL_URL
@@ -22,4 +24,4 @@ services:
       - key: MODEL_PATH
         value: models/best.pt
       - key: DEVICE
-        value: ""
+        value: "cpu"
