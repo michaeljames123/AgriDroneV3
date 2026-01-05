@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>AgriDrone Corn Field Segmentation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #020617;
+            color: #e5e7eb;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #1f2937;
+            background: linear-gradient(to right, #020617, #111827);
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.25rem;
+        }
+        main {
+            flex: 1;
+            padding: 1.5rem;
+            display: grid;
+            grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+            gap: 1.5rem;
+        }
+        @media (max-width: 900px) {
+            main {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
+        .card {
+            background: radial-gradient(circle at top left, rgba(59,130,246,0.3), transparent 60%), #020617;
+            border-radius: 0.75rem;
+            border: 1px solid #1f2937;
+            padding: 1rem 1.25rem;
+            box-shadow: 0 10px 30px rgba(15,23,42,0.8);
+        }
+        .card h2 {
+            margin-top: 0;
+            font-size: 1rem;
+            margin-bottom: 0.75rem;
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        input[type="file"] {
+            color: #e5e7eb;
+        }
+        button {
+            padding: 0.45rem 0.9rem;
+            border-radius: 9999px;
+            border: none;
+            background: linear-gradient(to right, #22c55e, #16a34a);
+            color: #f9fafb;
+            cursor: pointer;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        button span.spinner {
+            width: 14px;
+            height: 14px;
+            border-radius: 999px;
+            border: 2px solid rgba(209,213,219,0.7);
+            border-top-color: transparent;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .status {
+            font-size: 0.8rem;
+            color: #9ca3af;
+            min-height: 1.2rem;
+        }
+        .image-container {
+            position: relative;
+            width: 100%;
+            max-height: 70vh;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            background: #020617;
+            border: 1px solid #1f2937;
+        }
+        .image-container img {
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
+        .image-container canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .predictions-list {
+            max-height: 65vh;
+            overflow: auto;
+            font-size: 0.8rem;
+        }
+        .prediction-item {
+            border-bottom: 1px solid #111827;
+            padding: 0.4rem 0;
+            display: flex;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+        .pill {
+            border-radius: 999px;
+            padding: 0.1rem 0.5rem;
+            font-size: 0.75rem;
+        }
+        .pill-class {
+            background: rgba(59,130,246,0.2);
+            color: #bfdbfe;
+        }
+        .pill-score {
+            background: rgba(34,197,94,0.15);
+            color: #bbf7d0;
+        }
+        .json-dump {
+            margin-top: 0.75rem;
+            padding: 0.5rem 0.6rem;
+            background: #020617;
+            border-radius: 0.5rem;
+            border: 1px solid #111827;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.72rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 22vh;
+            overflow: auto;
+        }
+        .label {
+            font-size: 0.78rem;
+            color: #9ca3af;
+            margin-bottom: 0.35rem;
+        }
+        .endpoint-input {
+            width: 100%;
+            max-width: 420px;
+            background: #020617;
+            border-radius: 9999px;
+            border: 1px solid #1f2937;
+            padding: 0.35rem 0.7rem;
+            color: #e5e7eb;
+            font-size: 0.8rem;
+        }
+        .hint {
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>AgriDrone Corn Field Segmentation</h1>
+</header>
+
+<main>
+    <section class="card">
+        <h2>1. Upload image & run AI</h2>
+        <div class="controls">
+            <input type="file" id="fileInput" accept="image/*" />
+            <button id="runBtn">
+                <span id="runBtnSpinner" class="spinner" style="display:none;"></span>
+                <span id="runBtnText">Run Prediction</span>
+            </button>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;color:#9ca3af;">
+                <input id="returnImageToggle" type="checkbox" />
+                Return annotated image
+            </label>
+        </div>
+        <div class="label">API endpoint</div>
+        <input id="endpointInput" class="endpoint-input" type="text" value="http://127.0.0.1:8001/predict" />
+        <div class="hint">For Render later, replace with your deployed URL, e.g. <code>https://your-app.onrender.com/predict</code>.</div>
+
+        <div class="status" id="statusText"></div>
+
+        <div class="image-container" id="imageContainer">
+            <img id="baseImage" alt="Input image" />
+            <canvas id="overlayCanvas"></canvas>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2>2. Predictions</h2>
+        <div class="predictions-list" id="predictionsList"></div>
+        <div class="json-dump" id="jsonDump"></div>
+    </section>
+</main>
+
+<script>
+(function () {
+    const fileInput = document.getElementById('fileInput');
+    const runBtn = document.getElementById('runBtn');
+    const runBtnSpinner = document.getElementById('runBtnSpinner');
+    const runBtnText = document.getElementById('runBtnText');
+    const statusText = document.getElementById('statusText');
+    const baseImage = document.getElementById('baseImage');
+    const overlayCanvas = document.getElementById('overlayCanvas');
+    const overlayCtx = overlayCanvas.getContext('2d');
+    const predictionsList = document.getElementById('predictionsList');
+    const jsonDump = document.getElementById('jsonDump');
+    const endpointInput = document.getElementById('endpointInput');
+    const returnImageToggle = document.getElementById('returnImageToggle');
+
+    const ENDPOINT_STORAGE_KEY = 'agriDroneEndpoint';
+
+    function safeGetLocalStorage(key) {
+        try {
+            return window.localStorage.getItem(key);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function safeSetLocalStorage(key, value) {
+        try {
+            window.localStorage.setItem(key, value);
+        } catch (e) {
+        }
+    }
+
+    function healthUrlForEndpoint(endpoint) {
+        try {
+            const u = new URL(endpoint);
+            u.pathname = '/health';
+            u.search = '';
+            u.hash = '';
+            return u.toString();
+        } catch (e) {
+            return null;
+        }
+    }
+
+    async function fetchWithTimeout(url, timeoutMs) {
+        const controller = new AbortController();
+        const id = window.setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            return await fetch(url, { method: 'GET', signal: controller.signal });
+        } finally {
+            window.clearTimeout(id);
+        }
+    }
+
+    async function initEndpoint() {
+        const saved = safeGetLocalStorage(ENDPOINT_STORAGE_KEY);
+        if (saved) {
+            endpointInput.value = saved;
+            return;
+        }
+
+        const candidates = [
+            (window.location && window.location.origin && window.location.origin !== 'null')
+                ? (window.location.origin + '/predict')
+                : '',
+            endpointInput.value,
+            'http://127.0.0.1:8001/predict',
+            'http://localhost:8000/predict',
+            'http://localhost:8001/predict',
+        ];
+
+        const seen = new Set();
+        let reachableFallback = null;
+        for (const c of candidates) {
+            const endpoint = (c || '').trim();
+            if (!endpoint || seen.has(endpoint)) {
+                continue;
+            }
+            seen.add(endpoint);
+
+            const healthUrl = healthUrlForEndpoint(endpoint);
+            if (!healthUrl) {
+                continue;
+            }
+
+            try {
+                const res = await fetchWithTimeout(healthUrl, 800);
+                if (res && res.ok) {
+                    let health = null;
+                    try {
+                        health = await res.json();
+                    } catch (e) {
+                        health = null;
+                    }
+
+                    if (health && health.model_loaded === true) {
+                        endpointInput.value = endpoint;
+                        safeSetLocalStorage(ENDPOINT_STORAGE_KEY, endpoint);
+                        return;
+                    }
+
+                    if (!reachableFallback) {
+                        reachableFallback = endpoint;
+                    }
+                }
+            } catch (e) {
+            }
+        }
+
+        if (reachableFallback) {
+            endpointInput.value = reachableFallback;
+        }
+    }
+
+    initEndpoint();
+
+    endpointInput.addEventListener('change', function () {
+        const v = endpointInput.value.trim();
+        if (v) {
+            safeSetLocalStorage(ENDPOINT_STORAGE_KEY, v);
+        }
+    });
+
+    // Fixed colors per class so visualization is stable and matches your Roboflow dataset
+    const CLASS_COLOR_MAP = {
+        'Bacterial Stalk Rot': {
+            fill: 'rgba(248, 113, 113, 0.34)', // red
+            stroke: '#ef4444',
+        },
+        'Downy Mildew': {
+            fill: 'rgba(251, 191, 36, 0.34)', // amber / yellow
+            stroke: '#f59e0b',
+        },
+        'Field Rust-Blight': {
+            fill: 'rgba(34, 211, 238, 0.34)', // cyan
+            stroke: '#22d3ee',
+        },
+        'Healthy Field-Area': {
+            fill: 'rgba(34, 197, 94, 0.34)', // green
+            stroke: '#22c55e',
+        },
+        'Irregular Growth Area': {
+            fill: 'rgba(168, 85, 247, 0.34)', // purple
+            stroke: '#a855f7',
+        },
+        // Aliases (in case some tools export slightly different naming)
+        'Healthy Field Area': {
+            fill: 'rgba(34, 197, 94, 0.34)',
+            stroke: '#22c55e',
+        },
+        'Field Rust Blight': {
+            fill: 'rgba(34, 211, 238, 0.34)',
+            stroke: '#22d3ee',
+        },
+    };
+
+    // Class-id mapping based on the trained model class order (verified from models/best.pt)
+    const CLASS_ID_COLOR_MAP = {
+        0: CLASS_COLOR_MAP['Bacterial Stalk Rot'],
+        1: CLASS_COLOR_MAP['Downy Mildew'],
+        2: CLASS_COLOR_MAP['Field Rust-Blight'],
+        3: CLASS_COLOR_MAP['Healthy Field-Area'],
+        4: CLASS_COLOR_MAP['Irregular Growth Area'],
+    };
+
+    // Fallback palette for any unexpected / new classes
+    const COLOR_PALETTE = [
+        { fill: 'rgba(34, 197, 94, 0.28)', stroke: '#22c55e' },   // green
+        { fill: 'rgba(59, 130, 246, 0.28)', stroke: '#3b82f6' },  // blue
+        { fill: 'rgba(249, 115, 22, 0.28)', stroke: '#f97316' },  // orange
+        { fill: 'rgba(236, 72, 153, 0.28)', stroke: '#ec4899' },  // pink
+        { fill: 'rgba(139, 92, 246, 0.28)', stroke: '#8b5cf6' },  // violet
+        { fill: 'rgba(45, 212, 191, 0.28)', stroke: '#14b8a6' },  // teal
+    ];
+
+    function normalizeClassName(value) {
+        return (value == null ? '' : value).toString().trim();
+    }
+
+    function getColorForPrediction(p, index) {
+        const classId = p && typeof p.class_id === 'number' && !Number.isNaN(p.class_id)
+            ? p.class_id
+            : null;
+
+        if (classId != null && Object.prototype.hasOwnProperty.call(CLASS_ID_COLOR_MAP, classId)) {
+            return CLASS_ID_COLOR_MAP[classId];
+        }
+
+        const key = normalizeClassName(p && p.class_name != null ? p.class_name : `class_${p && p.class_id}`);
+        if (key && Object.prototype.hasOwnProperty.call(CLASS_COLOR_MAP, key)) {
+            return CLASS_COLOR_MAP[key];
+        }
+
+        const paletteIndex = classId != null ? classId % COLOR_PALETTE.length : index % COLOR_PALETTE.length;
+        return COLOR_PALETTE[paletteIndex];
+    }
+
+    function setLoading(isLoading, message) {
+        runBtn.disabled = isLoading;
+        runBtnSpinner.style.display = isLoading ? 'inline-block' : 'none';
+        runBtnText.textContent = isLoading ? 'Running…' : 'Run Prediction';
+        if (typeof message === 'string') {
+            statusText.textContent = message;
+        }
+    }
+
+    function clearResults() {
+        predictionsList.innerHTML = '';
+        jsonDump.textContent = '';
+        if (overlayCanvas && overlayCtx) {
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        }
+    }
+
+    function renderPredictions(predictions) {
+        predictionsList.innerHTML = '';
+        if (!predictions || !predictions.length) {
+            const empty = document.createElement('div');
+            empty.textContent = 'No objects detected.';
+            empty.style.color = '#9ca3af';
+            empty.style.fontSize = '0.8rem';
+            predictionsList.appendChild(empty);
+            return;
+        }
+
+        predictions.forEach((p, idx) => {
+            const row = document.createElement('div');
+            row.className = 'prediction-item';
+
+            const left = document.createElement('div');
+            const right = document.createElement('div');
+
+            const idxSpan = document.createElement('div');
+            idxSpan.textContent = `#${idx + 1}`;
+            idxSpan.style.fontSize = '0.75rem';
+            idxSpan.style.color = '#6b7280';
+
+            const classPill = document.createElement('span');
+            classPill.className = 'pill pill-class';
+            classPill.textContent = p.class_name ?? `class ${p.class_id}`;
+            const classColor = getColorForPrediction(p, idx);
+            classPill.style.background = classColor.fill;
+            classPill.style.border = `1px solid ${classColor.stroke}`;
+            classPill.style.color = '#e5e7eb';
+
+            left.appendChild(idxSpan);
+            left.appendChild(classPill);
+
+            const scorePill = document.createElement('span');
+            scorePill.className = 'pill pill-score';
+            scorePill.textContent = p.confidence != null
+                ? (p.confidence * 100).toFixed(1) + '%'
+                : '–';
+
+            right.appendChild(scorePill);
+
+            row.appendChild(left);
+            row.appendChild(right);
+            predictionsList.appendChild(row);
+        });
+    }
+
+    function drawPolygonOverlay(imageEl, predictions) {
+        if (!imageEl || !imageEl.naturalWidth || !imageEl.naturalHeight) {
+            return;
+        }
+
+        const width = imageEl.naturalWidth;
+        const height = imageEl.naturalHeight;
+
+        overlayCanvas.width = width;
+        overlayCanvas.height = height;
+        overlayCtx.clearRect(0, 0, width, height);
+        overlayCtx.lineJoin = 'round';
+        overlayCtx.lineCap = 'round';
+
+        if (!predictions || !predictions.length) {
+            return;
+        }
+
+        const baseLineWidth = Math.max(1.5, width / 600);
+        const baseFontSize = Math.max(11, width / 70);
+
+        predictions.forEach((p, index) => {
+            const polyNorm = Array.isArray(p.polygon_normalized) && p.polygon_normalized.length
+                ? p.polygon_normalized
+                : null;
+            const poly = polyNorm || p.polygon;
+
+            if (!Array.isArray(poly) || poly.length < 3) {
+                return;
+            }
+
+            overlayCtx.beginPath();
+            poly.forEach((pt, i) => {
+                const xVal = Array.isArray(pt) ? pt[0] : pt.x;
+                const yVal = Array.isArray(pt) ? pt[1] : pt.y;
+
+                const x = polyNorm ? xVal * width : xVal;
+                const y = polyNorm ? yVal * height : yVal;
+
+                if (i === 0) {
+                    overlayCtx.moveTo(x, y);
+                } else {
+                    overlayCtx.lineTo(x, y);
+                }
+            });
+            overlayCtx.closePath();
+
+            const colorCfg = getColorForPrediction(p, index);
+            const fill = colorCfg.fill;
+            const stroke = colorCfg.stroke;
+
+            overlayCtx.lineWidth = baseLineWidth;
+            overlayCtx.strokeStyle = stroke;
+            overlayCtx.fillStyle = fill;
+            overlayCtx.stroke();
+
+            // Label near the first point
+            const first = poly[0];
+            const lx = (polyNorm ? first[0] * width : first[0]) + 3;
+            const ly = (polyNorm ? first[1] * height : first[1]) + 3;
+            const labelText = (p.class_name || `class ${p.class_id}`) +
+                (p.confidence != null ? ` ${(p.confidence * 100).toFixed(1)}%` : '');
+
+            overlayCtx.font = `${baseFontSize}px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+            overlayCtx.textBaseline = 'top';
+
+            const metrics = overlayCtx.measureText(labelText);
+            const textW = metrics.width + 8;
+            const textH = baseFontSize + 4;
+
+            overlayCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+            overlayCtx.fillRect(lx - 2, ly - 2, textW, textH);
+
+            overlayCtx.fillStyle = '#e5e7eb';
+            overlayCtx.fillText(labelText, lx + 2, ly);
+        });
+    }
+
+    function loadLocalImage(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+            reader.onload = e => {
+                baseImage.onload = () => {
+                    // When a new image is loaded, clear any old overlay
+                    if (overlayCanvas && overlayCtx) {
+                        overlayCanvas.width = baseImage.naturalWidth;
+                        overlayCanvas.height = baseImage.naturalHeight;
+                        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                    }
+                    resolve();
+                };
+                baseImage.onerror = () => reject(new Error('Failed to load image'));
+                baseImage.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    async function runPrediction() {
+        clearResults();
+        statusText.textContent = '';
+
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+            alert('Please choose an image file first.');
+            return;
+        }
+
+        // Load the local image so we can overlay polygons on top of the original pixels
+        try {
+            await loadLocalImage(file);
+        } catch (e) {
+            console.error(e);
+            statusText.textContent = 'Error loading image locally: ' + (e && e.message ? e.message : 'Unknown');
+            return;
+        }
+
+        let endpoint = endpointInput.value.trim();
+        if (!endpoint) {
+            alert('Please enter an API endpoint URL.');
+            return;
+        }
+
+        safeSetLocalStorage(ENDPOINT_STORAGE_KEY, endpoint);
+
+        const wantReturnImage = !!(returnImageToggle && returnImageToggle.checked);
+        let url = endpoint;
+        try {
+            const base = (window.location && window.location.origin && window.location.origin !== 'null')
+                ? window.location.origin
+                : undefined;
+            const u = base ? new URL(endpoint, base) : new URL(endpoint);
+            if (wantReturnImage) {
+                u.searchParams.set('return_image', 'true');
+            } else {
+                u.searchParams.delete('return_image');
+            }
+            url = u.toString();
+        } catch (e) {
+            url = endpoint;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            setLoading(true, 'Sending image to API…');
+
+            const response = await fetch(url, {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const text = await response.text().catch(() => '');
+                throw new Error(`API error ${response.status}: ${text || response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            const predictions = data.predictions || [];
+
+            // Draw polygons directly on top of the original image
+            drawPolygonOverlay(baseImage, predictions);
+
+            renderPredictions(predictions);
+            jsonDump.textContent = JSON.stringify(data, null, 2);
+            statusText.textContent = `Done. Detected ${data.predictions ? data.predictions.length : 0} regions.`;
+        } catch (err) {
+            console.error(err);
+            statusText.textContent = 'Error: ' + (err && err.message ? err.message : 'Unknown error');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    runBtn.addEventListener('click', function () {
+        runPrediction();
+    });
+})();
+</script>
+</body>
+</html>
